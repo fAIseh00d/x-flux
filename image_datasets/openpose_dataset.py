@@ -18,22 +18,26 @@ def c_crop(image):
 
 class OpenPoseImageDataset(Dataset):
     def __init__(self, img_dir, img_size=512):
-        self.img_dir = img_dir
-        self.images = [os.path.join(img_dir, i) for i in os.listdir(img_dir) if ('.jpg' in i or '.png' in i) and not i.endswith('_pose.jpg') and not i.endswith('_pose.png')]
-        self.images.sort()
+        self.dataset_dir = img_dir
         self.img_size = img_size
-
-        print('OpenPoseImageDataset: ', len(self.images))
+        
+        # Load the JSONL file
+        jsonl_path = os.path.join(img_dir, 'dataset.jsonl')
+        with open(jsonl_path, 'r') as f:
+            self.data = [json.loads(line.strip()) for line in f]
+        
+        print('OpenPoseImageDataset: ', len(self.data))
 
     def __len__(self):
-        return len(self.images)
+        return len(self.data)
 
     def __getitem__(self, idx):
         try:
-            json_path = self.images[idx].split('.')[0] + '.json'
-            json_data = json.load(open(json_path))
+            json_data = self.data[idx]
 
-            img = Image.open(self.images[idx])
+            # Load the main image
+            img_path = os.path.join(self.dataset_dir, json_data['image'])
+            img = Image.open(img_path)
             img = c_crop(img)
             img = img.resize((self.img_size, self.img_size))
             # support gray scale images as well
@@ -42,19 +46,21 @@ class OpenPoseImageDataset(Dataset):
             img = torch.from_numpy((np.array(img) / 127.5) - 1)
             img = img.permute(2, 0, 1)
 
-            hint_path = os.path.join(self.img_dir, json_data['conditioning_image'])
+            # Load the conditioning image
+            hint_path = os.path.join(self.dataset_dir, json_data['conditioning_image'])
             hint = Image.open(hint_path)
             hint = c_crop(hint)
             hint = hint.resize((self.img_size, self.img_size))
             hint = torch.from_numpy((np.array(hint) / 127.5) - 1)
             hint = hint.permute(2, 0, 1)
             
-            prompt = json_data['caption']
+            # Get the prompt text
+            prompt = json_data['text']
             return img, hint, prompt
 
         except Exception as e:
             print(e)
-            return self.__getitem__(random.randint(0, len(self.images) - 1))
+            return self.__getitem__(random.randint(0, len(self.data) - 1))
 
 
 def openpose_dataset_loader(train_batch_size, num_workers, **args):
